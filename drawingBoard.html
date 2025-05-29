@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body style="height: 100vh; width: 100vw; padding: 0; margin: 0">
+<img src="draw (3).jpg" width="64" height="32" />
+<div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; position: relative">
+    <canvas id="draw" style="position: absolute"></canvas>
+    <canvas id="grid" style="position: absolute"></canvas>
+    <canvas id="cursor" style="position: absolute"></canvas>
+    <div style="position: absolute; bottom: 0; display: flex; align-items: center; justify-content: center; gap: 18px;">
+        <pre style="font-size: 30px">Ctrl + s 保存为jpg</pre>
+        <button onclick="clearRect()">清除</button>
+        <label>
+            橡皮
+            <input type="checkbox" id="erase" style="position: absolute; bottom: 0"/>
+        </label>
+        <label>
+            像素
+            <input type="number" id="pixel" value="1"/>
+        </label>
+    </div>
+</div>
+<script>
+    // 定义绘制宽高
+    let canH = 64;
+    let canW = 128;
+    // 初始化画笔和橡皮像素、颜色
+    let pixels = 1;
+    let brushColor = 'rgb(0, 255, 255)';
+    let eraserColor = 'rgb(0,0,0)';
+    // 缩放比率
+    let scale = 2;
+    // 鼠标按下标志
+    let msd = false;
+    // 切换橡皮标志
+    let toErase = false;
+    // 图像中单个像素占用的实际像素个数
+    const basicWH = 8;
+    // 数据对象
+    let dataList = [];
+    // 实际绘图 canvas
+    let drawCanvas = document.getElementById('draw');
+    // 网格显示 canvas
+    let gridCanvas = document.getElementById('grid');
+    // 绘制画笔、橡皮游标 canvas
+    let cursorCanvas = document.getElementById('cursor');
+    // 橡皮元素
+    const erase = document.getElementById('erase');
+    // 设置像素大小元素
+    const pix = document.getElementById('pixel');
+    // 初始化 canvas 的宽高，实际图像宽高 x 单个像素宽高 x 缩放比率
+    const actualW =  canW * basicWH * scale;
+    const actualH = canH * basicWH * scale;
+    drawCanvas.width = actualW;
+    drawCanvas.height =actualH;
+    gridCanvas.width = actualW;
+    gridCanvas.height = actualH;
+    cursorCanvas.width = actualW;
+    cursorCanvas.height = actualH;
+    // drawCtx 实际绘图上下文
+    const drawCtx = drawCanvas.getContext('2d');
+    // gridCtx, 网格绘制上下文
+    const gridCtx = gridCanvas.getContext('2d');
+    // cursorCtx 光标层
+    const cursorCtx = cursorCanvas.getContext('2d');
+    // 光标颜色，线宽
+    cursorCtx.strokeStyle = 'rgb(47,175,208)'
+    cursorCtx.lineWidth = 1;
+
+    // 网格颜色，线宽
+    gridCtx.strokeStyle = 'rgb(27,27,27)';
+    gridCtx.lineWidth = 1;
+
+    const initGridAndCanData = () => {
+        // 根据宽高初始化网格, 初始化数据
+        for (let i = 0; i < canH; i++) {
+            // 画 canH 条
+            gridCtx.beginPath();
+            gridCtx.moveTo(0, i * basicWH * scale);
+            gridCtx.lineTo(canW * basicWH * scale, i * basicWH * scale);
+            gridCtx.stroke();
+            dataList.push([]);
+            for (let j = 0; j < canW; j++) {
+                // 画 canW 条
+                if (i === 0) {
+                    gridCtx.beginPath();
+                    gridCtx.moveTo(j * basicWH * scale, 0);
+                    gridCtx.lineTo(j * basicWH * scale, canH * basicWH * scale);
+                    gridCtx.stroke();
+                }
+                // 初始化一个数据
+                dataList[i].push(
+                    {
+                        // 当前像素格在 canvas 中的坐标
+                        x: basicWH * j * scale,
+                        y: basicWH * i * scale,
+                        // 当前像素格的大小
+                        width: basicWH * scale,
+                        height: basicWH * scale,
+                        // 当前像素格颜色，使用橡皮颜色初始化
+                        color: eraserColor,
+                    });
+            }
+        }
+        // 画布最底端边界线条
+        gridCtx.beginPath();
+        gridCtx.moveTo(0, canH * basicWH * scale);
+        gridCtx.lineTo(canW * basicWH * scale, canH * basicWH * scale);
+        gridCtx.stroke();
+
+        // 画布最右端边界线条
+        gridCtx.beginPath();
+        gridCtx.moveTo(canW * basicWH * scale, 0);
+        gridCtx.lineTo(canW * basicWH * scale, canH * basicWH * scale);
+        gridCtx.stroke();
+    };
+
+    initGridAndCanData();
+
+    // 绘制 dataList 中数据到画布
+    const drawDataList = () => {
+        for (const data of dataList) {
+            for (const datum of data) {
+                drawCtx.fillStyle = datum.color;
+                drawCtx.fillRect(datum.x, datum.y, datum.width, datum.height);
+            }
+        }
+    }
+
+    // 清除绘制画布
+    const clearRect = () => {
+        // 需要先清除，由于混合模式，如果橡皮是透明的，不清除无法覆盖原 rect 的色块。
+        drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+        drawCtx.fillStyle = eraserColor;
+        drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+        // 更新数据项
+        for (const data of dataList) {
+            for (const datum of data) {
+                datum.color = eraserColor;
+            }
+        }
+    }
+
+    // erase 更新
+    const eraser = (e) => {
+        toErase = e.target.checked;
+    }
+    // 像素粗细更新
+    pix.addEventListener('change', (e) => {
+        pixels = Math.floor(Number.parseInt(e.target.value, 10));
+    })
+    erase.addEventListener('change', (e) => {
+        eraser(e);
+    })
+
+    // 开始绘制
+    drawDataList();
+
+    let lastX, lastY; // 用于记录上一次的鼠标位置
+
+    // 从鼠标事件的 clientX 和 clientY 映射到 dataList 中的行列坐标
+    const getColRow = (eX, eY) => {
+        // canvas 边缘
+        const canEleRect = drawCanvas.getBoundingClientRect();
+        // dataList 中行列坐标 = 鼠标相对画布左上角坐标 / dataList 中单个数据项的大小
+        let centerX = Math.floor((eX - canEleRect.x) / (basicWH * scale));
+        let centerY = Math.floor((eY - canEleRect.y) / (basicWH * scale));
+
+        return [centerX, centerY];
+    }
+
+    // 更新 drawCtx 呈现同时更新 dataList
+    const updateRectData = (startX, endX, startY, endY) => {
+        for (let y = startY; y <= endY; y++) {
+            for (let x = startX; x <= endX; x++) {
+                try {
+                    if (toErase) {
+                        dataList[y][x].color = eraserColor;
+                    } else {
+                        dataList[y][x].color = brushColor;
+                    }
+                    drawCtx.fillStyle = dataList[y][x].color;
+                    // 同样需要先清除现有色块，防止新绘制色块是透明色块无法覆盖原有色块。
+                    drawCtx.clearRect(dataList[y][x].x, dataList[y][x].y, dataList[y][x].width, dataList[y][x].height);
+                    drawCtx.fillRect(dataList[y][x].x, dataList[y][x].y, dataList[y][x].width, dataList[y][x].width);
+                } catch (e) {
+                    console.log(e);
+                }
+            }
+        }
+    };
+
+    // Bresenham算法生成直线路径上的所有整数点
+    const getLinePoints = (x0, y0, x1, y1) => {
+        const points = [];
+        // 两个点在 x 和 y 方向的绝对距离，两个方向的总步数
+        const dx = Math.abs(x1 - x0);
+        const dy = Math.abs(y1 - y0);
+        // x y 的步进方向，设置步进大小为 1
+        const sx = x0 < x1 ? 1 : -1;
+        const sy = y0 < y1 ? 1 : -1;
+        let err = dx - dy;
+
+        while (true) {
+            // 将当前步进结果 push 到结果列表
+            points.push([x0, y0]);
+            // 到达终点，跳出
+            if (x0 === x1 && y0 === y1) break;
+            const e2 = 2 * err;
+            // 2dx > dy
+            if (e2 > -dy) {
+                // 往 x 方向步进
+                err -= dy;
+                x0 += sx;
+            }
+            // 2dy > dx
+            if (e2 < dx) {
+                // 往 y 方向步进
+                err += dx;
+                y0 += sy;
+            }
+        }
+        return points;
+    };
+
+    const updateDataAndCanvas = (e) => {
+        const cr = getColRow(e.clientX, e.clientY);
+        const currentX = cr[0];
+        const currentY = cr[1];
+        // 保存初始 X Y 坐标
+        let startTmpX = currentX - Math.floor((pixels - 1) / 2);
+        // 限定坐标在 dataList 的宽高内
+        let startX = Math.max(0, startTmpX);
+        let endX = Math.min(currentX + Math.floor(pixels / 2), dataList[0].length - 1);
+        let startTmpY = currentY - Math.floor((pixels - 1) / 2)
+        let startY = Math.max(startTmpY, 0);
+        let endY = Math.min(currentY + Math.floor(pixels / 2), dataList.length - 1);
+        if (msd) {
+            if (lastX !== undefined && lastY !== undefined) {
+                const points = getLinePoints(lastX, lastY, currentX, currentY);
+                points.forEach(([x, y]) => {
+                    let startX = Math.max(0, x - Math.floor((pixels - 1) / 2));
+                    let endX = Math.min(x + Math.floor(pixels / 2), dataList[0].length - 1);
+                    let startY = Math.max(y - Math.floor((pixels - 1) / 2), 0);
+                    let endY = Math.min(y + Math.floor(pixels / 2), dataList.length - 1);
+                    requestAnimationFrame(() => updateRectData(startX, endX, startY, endY));
+                });
+            } else {
+                requestAnimationFrame(() => updateRectData(startX, endX, startY, endY));
+            }
+        }
+
+        // 更新上一次鼠标事件的坐标
+        lastX = currentX;
+        lastY = currentY;
+        try {
+            cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+            // 当鼠标在左侧和上方时，绘制的 cursor 框需要减去溢出部分，来确保实际绘制的像素和 cursor 框中的一致
+            let offsetPixelsX = pixels;
+            let offsetPixelsY = pixels;
+            if (startTmpX < 0) {
+                offsetPixelsX += startTmpX;
+            }
+            if (startTmpY < 0) {
+                offsetPixelsY += startTmpY;
+            }
+            // 这里在鼠标快速移动到画布外的时候可能会出现索引越界，使用 try catch
+            cursorCtx.strokeRect(dataList[startY][startX].x, dataList[startY][startX].y, dataList[endY][endX].width * offsetPixelsX, dataList[endY][endX].height * offsetPixelsY);
+        } catch (e) {
+            console.log(e);
+        }
+    }
+
+    // 给顶层 canvas 添加事件绑定
+    cursorCanvas.addEventListener('mousemove', (e) => {
+        updateDataAndCanvas(e);
+    })
+
+    // 支持触摸事件
+    cursorCanvas.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1) {
+            updateDataAndCanvas(e.touches[0]);
+        }
+    })
+
+    // 触摸结束，重置上次 x y
+    cursorCanvas.addEventListener('touchend', () => {
+        lastX = undefined;
+        lastY = undefined;
+    })
+    cursorCanvas.addEventListener('mousedown', (e) => {
+        // 更新数据，重绘 canvas
+        requestAnimationFrame(() => updateDataAndCanvas(e));
+    })
+    // 结束 canvas 事件绑定
+
+    // 给 document 添加事件绑定，使得鼠标在画布外释放和落下能正常触发 canvas 绘制。
+    document.addEventListener('mousedown', () => {
+        msd = true;
+    })
+    document.addEventListener('mouseup', () => {
+        msd = false;
+        lastX = undefined;
+        lastY = undefined;
+    })
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 's') {
+            // 设置缩放比例
+            const scaleWidth = 64;
+            const scaleHeight = 32;
+
+            // 创建一个新的 canvas 元素，用于绘制缩小后的图像
+            const scaledCanvas = document.createElement("canvas");
+            scaledCanvas.width = scaleWidth;
+            scaledCanvas.height = scaleHeight;
+
+            const scaledContext = scaledCanvas.getContext("2d");
+
+            // 将原始 canvas 内容绘制到缩小后的 canvas 中
+            scaledContext.drawImage(drawCanvas, 0, 0, scaleWidth, scaleHeight);
+            const dataUrl = scaledCanvas.toDataURL('image/jpeg', 1);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = dataUrl;
+            downloadLink.download = 'draw.jpg';
+            downloadLink.click();
+        }
+    })
+    // 结束 document 事件绑定
+</script>
+</body>
+</html>
